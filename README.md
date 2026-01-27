@@ -1,16 +1,55 @@
-SystemD — v0.3.1 (Clean Bundle)
-===============================
+# SystemD — DD-R Runner & Multisector Harness (v0.3.1)
 
-This bundle provides a single entry point (v0.3.1) with a canonical OSF-ready structure:
+Runner + harness contractuel pour **analyse descriptive** (frameworks DD / DD‑R / E) :
+- **00_core** : runner DD‑R (stdlib-only) + specs + templates.
+- **01_tests_multisector** : harness de tests multi‑secteurs (profils YAML → fixtures → expected snapshots).
 
-- 00_core/              Core runner + specs + templates + examples + reference docs
-- 01_tests_multisector/ Cross-sector test harness (“profiles-as-contract”) + fixtures + expected outputs
-- SXX_TEMPLATE_sector/  Template component structure for sector splits
-- 99_releases/          Original source zips + integrity indexes (optional)
-- requirements.txt      Minimal deps (tests harness)
-- RUNNING.md            How to run core + tests
+![Python](https://img.shields.io/badge/python-3.9%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-Notes:
-- Core runner is stdlib-only (no external dependencies).
-- Test harness requires PyYAML (see requirements.txt).
+> Note : le message GitHub “Uh oh! There was an error while loading” est un artefact d’interface (côté GitHub).
+> Il n’est pas un invariant du projet. Préférer les URLs *Raw* si nécessaire.
+
+## Quick start
+
+### 1) Installation
+```bash
+python -m pip install -r requirements.txt
+```
+
+### 2) Core runner (stdlib-only)
+```bash
+python 00_core/scripts/run_ddr.py --help
+```
+
+### 3) Multisector harness (profils YAML → expected)
+Depuis la racine du repo :
+```bash
+python 01_tests_multisector/harness.py --repo-root . --profiles 01_tests_multisector/tests/profiles
+```
+
+Pour régénérer les expected snapshots (changement intentionnel de comportement) :
+```bash
+python 01_tests_multisector/harness.py --repo-root . --profiles 01_tests_multisector/tests/profiles --update-expected
+```
+
+## Contrats (tests)
+- Profils : `01_tests_multisector/tests/profiles/*.yaml`
+- Fixtures : `01_tests_multisector/tests/fixtures/`
+- Expected + hashes : `01_tests_multisector/tests/expected/`
+- Résumé agrégé : `01_tests_multisector/tests/results.json`
+
+## Intégrité (SHA256)
+Deux régimes existent :
+- **Index de fichiers** (binaire) : `FILE_INDEX_SHA256.txt` (type `sha256sum -c`).
+- **Snapshots expected** (sémantique) : `*.report.sha256.txt` correspond au `hash_sha256` interne calculé sur JSON canonique (hors champ `hash_sha256`).
+
+## Documentation
+- Exécution : `RUNNING.md`
+- Glossaire + règles épistémologiques : `00_core/docs/`
+- Spécification DDR : `00_core/docs/SPEC_DDR_v0.3.1-final.md`
+
+## Non‑objectifs
+- Aucune interprétation des résultats.
+- Aucune intégration Linux systemd (unit files) fournie dans ce dépôt.
 
