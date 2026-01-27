@@ -4,8 +4,12 @@ Runner + harness contractuel pour **analyse descriptive** (frameworks DD / DD‑
 - **00_core** : runner DD‑R (stdlib-only) + specs + templates.
 - **01_tests_multisector** : harness de tests multi‑secteurs (profils YAML → fixtures → expected snapshots).
 
-![Python](https://img.shields.io/badge/python-3.9%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![tests (ci.yml)](https://github.com/dalozedidier-dot/Systemd-runner/actions/workflows/ci.yml/badge.svg?branch=main&event=push&label=tests)](https://github.com/dalozedidier-dot/Systemd-runner/actions/workflows/ci.yml)
+[![tests (python-app.yml)](https://github.com/dalozedidier-dot/Systemd-runner/actions/workflows/python-app.yml/badge.svg?branch=main&event=push&label=tests)](https://github.com/dalozedidier-dot/Systemd-runner/actions/workflows/python-app.yml)
+[![regen-expected](https://github.com/dalozedidier-dot/Systemd-runner/actions/workflows/regen-expected.yml/badge.svg?branch=main&label=regen-expected)](https://github.com/dalozedidier-dot/Systemd-runner/actions/workflows/regen-expected.yml)
+
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
+[![License](https://img.shields.io/github/license/dalozedidier-dot/Systemd-runner)](LICENSE)
 
 > Note : le message GitHub “Uh oh! There was an error while loading” est un artefact d’interface (côté GitHub).
 > Il n’est pas un invariant du projet. Préférer les URLs *Raw* si nécessaire.
