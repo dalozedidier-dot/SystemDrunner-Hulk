@@ -1,8 +1,13 @@
-name: ci
+name: systemd-ci
 
 on:
   push:
+    branches: ["main"]
   pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
 
 jobs:
   verify-and-run:
@@ -13,37 +18,31 @@ jobs:
         python-version: ["3.10", "3.11", "3.12"]
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
+      - name: Install deps (harness)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
 
-      - name: Verify FILE_INDEX_SHA256 (Principe S)
+      - name: Lint (fatal only)
         run: |
-          python 00_core/scripts/verify_file_index.py --root . --index FILE_INDEX_SHA256.txt
+          python -m pip install flake8
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 
-      - name: Core tests (run_ddr.py)
+      - name: Run core runner self-tests
         run: |
           python 00_core/scripts/run_ddr.py --run-tests
 
-      - name: Harness run (multisector)
+      - name: Verify repo file index
         run: |
-          python 01_tests_multisector/harness.py \
-            --repo-root 01_tests_multisector \
-            --profiles tests/profiles \
-            --out tests/results.json
+          python 00_core/scripts/verify_file_index.py --root .
 
-      - name: Upload results artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: results_py${{ matrix.python-version }}
-          path: |
-            01_tests_multisector/tests/results.json
+      - name: Run multisector harness (repo root)
+        run: |
+          python 01_tests_multisector/harness.py --repo-root .
+
