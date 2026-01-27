@@ -14,3 +14,9 @@ Notes:
 - Core runner is stdlib-only (no external dependencies).
 - Test harness requires PyYAML (see requirements.txt).
 
+
+Quick run (multisector harness):
+
+```bash
+python 01_tests_multisector/harness.py --repo-root 01_tests_multisector --profiles tests/profiles
+```

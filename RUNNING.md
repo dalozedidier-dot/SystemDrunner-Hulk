@@ -89,7 +89,13 @@ The harness runs YAML “profiles-as-contract” against fixtures and compares r
 ### Command
 From the repository root:
 ```bash
-python 01_tests_multisector/harness.py --repo-root . --profiles 01_tests_multisector/tests/profiles
+python 01_tests_multisector/harness.py --repo-root 01_tests_multisector --profiles tests/profiles
+```
+
+Alternative (run from inside `01_tests_multisector/`):
+```bash
+cd 01_tests_multisector
+python harness.py --repo-root . --profiles tests/profiles
 ```
 
 ### Expected artifacts
@@ -98,7 +104,7 @@ python 01_tests_multisector/harness.py --repo-root . --profiles 01_tests_multise
 
 ### Updating expected snapshots (only when intentionally changing behavior)
 ```bash
-python 01_tests_multisector/harness.py --repo-root . --profiles 01_tests_multisector/tests/profiles --update-expected
+python 01_tests_multisector/harness.py --repo-root 01_tests_multisector --profiles tests/profiles --update-expected
 ```
 
 ## 5) Integrity / Checksums (optional but recommended)
