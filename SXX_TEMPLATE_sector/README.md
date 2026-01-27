@@ -1,15 +1,13 @@
-# SXX_TEMPLATE_sector — template (v0.3.1)
+# SXX_TEMPLATE_sector
 
-This is a **minimal** sector template folder.
+Template minimal opérationnel pour sectorisation (STRUCT_N).
+Objectif : fournir un exemple reproductible (profiles + fixtures) sans dépendre du multisector.
 
-Purpose:
-- Provide a stable slot for sector splits (`S01_<sector>`, `S02_<sector>`, ...).
-- Keep sector-specific inputs/params/adapters/notes **separate** from the baseline core (`00_core`) and the multisector harness (`01_tests_multisector`).
+## Exécution (depuis la racine du repo)
+pip install -r requirements.txt
 
-Recommended subfolders:
-- `inputs/`  : sector fixtures / raw sources (optional)
-- `adapters/`: sector parsing / mapping notes or code (optional)
-- `outputs/` : sector reports (optional; may be git-ignored)
-- `notes/`   : sector constraints, assumptions, deltas vs baseline
+# Génération initiale des expected
+python 01_tests_multisector/harness.py --repo-root . --profiles SXX_TEMPLATE_sector/tests/profiles --update-expected
 
-No code is required here.
+# Vérification (sans update)
+python 01_tests_multisector/harness.py --repo-root . --profiles SXX_TEMPLATE_sector/tests/profiles
