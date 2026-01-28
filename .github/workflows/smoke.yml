@@ -8,6 +8,7 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,52 +18,82 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Install
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install -U pip
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
-          else
-            # filet de sécurité si tu n'as pas de requirements
-            pip install -U pyyaml jsonschema numpy pandas
           fi
 
       - name: Debug layout
         shell: bash
         run: |
           set -euo pipefail
+          echo "ROOT:"
           ls -la
-          ls -la scripts || true
-          ls -la 01_tests_multisector || true
-          ls -la TEST_MATRIX* || true
+          echo "FIND TEST_MATRIX candidates:"
+          find . -maxdepth 3 -type f -iname "*test*matrix*.md" -print || true
+          echo "FIND harness candidates:"
+          find . -maxdepth 4 -type f \( -iname "*harness*.py" -o -iname "*smoke*.py" \) -print || true
 
-      - name: Run smoke (capture logs)
-        id: run_smoke
+      - name: Run smoke DDR + E (no hard requirement on TEST_MATRIX)
         shell: bash
+        env:
+          PYTHONPATH: .
         run: |
-          set +e
+          set -euo pipefail
           rm -rf _ci_out
           mkdir -p _ci_out
-          python scripts/ci_smoke.py 2>&1 | tee _ci_out/smoke.log
-          echo $? > _ci_out/exit_code.txt
-          exit 0
 
-      - name: Upload artifacts always
-        if: always()
+          # Cherche une matrice quelque part (si elle existe)
+          MATRIX=""
+          if [ -f TEST_MATRIX.md ]; then
+            MATRIX="TEST_MATRIX.md"
+          else
+            CAND=$(find . -maxdepth 3 -type f -iname "*test*matrix*.md" | head -n 1 || true)
+            if [ -n "$CAND" ]; then
+              MATRIX="$CAND"
+            fi
+          fi
+
+          if [ -n "$MATRIX" ]; then
+            echo "Using matrix: $MATRIX"
+          else
+            echo "No TEST_MATRIX found. Proceeding without it."
+          fi
+
+          # Lance l'entrypoint le plus probable
+          if [ -f scripts/run_smoke.py ]; then
+            python scripts/run_smoke.py 2>&1 | tee _ci_out/smoke.log
+          elif [ -f 01_tests_multisector/harness.py ]; then
+            if [ -n "$MATRIX" ]; then
+              python 01_tests_multisector/harness.py --repo-root . --test-matrix "$MATRIX" 2>&1 | tee _ci_out/smoke.log
+            else
+              python 01_tests_multisector/harness.py --repo-root . 2>&1 | tee _ci_out/smoke.log
+            fi
+          elif [ -f harness.py ]; then
+            if [ -n "$MATRIX" ]; then
+              python harness.py --repo-root . --test-matrix "$MATRIX" 2>&1 | tee _ci_out/smoke.log
+            else
+              python harness.py --repo-root . 2>&1 | tee _ci_out/smoke.log
+            fi
+          else
+            echo "No smoke/harness entrypoint found." | tee _ci_out/smoke.log
+            exit 2
+          fi
+
+          echo "Found reports:"
+          find . -maxdepth 6 -type f \( -name "ddr_report.json" -o -name "e_report.json" -o -name "extraction_report.json" \) -print | tee _ci_out/found_reports.txt || true
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: systemd_smoke_reports
-          path: _ci_out/
+          path: |
+            _ci_out/
+            **/ddr_report.json
+            **/e_report.json
+            **/extraction_report.json
           if-no-files-found: error
-
-      - name: Fail if smoke failed
-        shell: bash
-        run: |
-          set -euo pipefail
-          code=$(cat _ci_out/exit_code.txt)
-          echo "exit_code=$code"
-          if [ "$code" != "0" ]; then
-            exit 1
-          fi
