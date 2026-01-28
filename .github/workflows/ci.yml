@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install
+      - name: Install dependencies
         shell: bash
         run: |
           set -euo pipefail
@@ -35,14 +35,17 @@ jobs:
           set -euo pipefail
           echo "ROOT:"
           ls -la
-          echo "test_data/:"
+          echo ""
+          echo "test_data:"
           ls -la test_data || true
-          echo "find band_*.csv:"
+          echo ""
+          echo "Find harness.py:"
+          find . -maxdepth 6 -type f -name "harness.py" -print || true
+          echo ""
+          echo "Find band_*.csv:"
           find . -maxdepth 6 -type f -name "band_*.csv" -print || true
-          echo "harness:"
-          ls -la 01_tests_multisector || true
 
-      - name: Run harness on bands
+      - name: Run harness (DDR + E)
         shell: bash
         env:
           PYTHONPATH: .
@@ -51,38 +54,36 @@ jobs:
           rm -rf _ci_out
           mkdir -p _ci_out
 
-          # Option simple: on passe le dossier test_data au harness s'il sait le lire via --input-dir
-          # Si ton harness ne supporte pas --input-dir, on te mettra une boucle python.
-          OUT_JSON="_ci_out/harness_results.json"
-
-          if python 01_tests_multisector/harness.py --help | grep -q -- "--input-dir"; then
-            python 01_tests_multisector/harness.py --repo-root . --input-dir test_data --out "$OUT_JSON" 2>&1 | tee _ci_out/smoke.log
-            echo $? > _ci_out/exit_code.txt
-          else
-            echo "harness.py has no --input-dir; running a minimal loop." | tee _ci_out/smoke.log
-            python - <<'PY' 2>&1 | tee -a _ci_out/smoke.log
-import glob, json, os, subprocess, sys
-bands = sorted(glob.glob("test_data/band_*.csv"))
-os.makedirs("_ci_out", exist_ok=True)
-results = []
-for p in bands:
-    out_json = f"_ci_out/{os.path.basename(p).replace('.csv','')}_harness.json"
-    cmd = [sys.executable, "01_tests_multisector/harness.py", "--repo-root", ".", "--out", out_json]
-    # IMPORTANT: adapte ici si ton harness attend un param input explicite
-    # Exemple si supporte --input-csv:
-    # cmd += ["--input-csv", p]
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    results.append({"band": p, "cmd": " ".join(cmd), "exit": proc.returncode, "output": proc.stdout[-2000:]})
-with open("_ci_out/harness_loop_summary.json","w",encoding="utf-8") as f:
-    json.dump({"total": len(results), "results": results}, f, indent=2, ensure_ascii=False)
-# exit non fatal, on laisse la step suivante décider
-sys.exit(0)
-PY
-            echo 0 > _ci_out/exit_code.txt
+          # Trouver le harness automatiquement (au cas où le chemin bouge)
+          HARNESS=$(find . -maxdepth 6 -type f -name "harness.py" | head -n 1)
+          if [ -z "$HARNESS" ]; then
+            echo "No harness.py found" | tee _ci_out/smoke.log
+            echo 2 > _ci_out/exit_code.txt
+            exit 0
           fi
 
-          echo "Found reports:"
-          find . -maxdepth 8 -type f \( -name "ddr_report.json" -o -name "e_report.json" \) -print | tee _ci_out/found_reports.txt || true
+          echo "Using HARNESS=$HARNESS" | tee _ci_out/smoke.log
+
+          # Capturer l'aide pour qu'on voie les bons arguments
+          python "$HARNESS" --help > _ci_out/harness_help.txt 2>&1
+
+          OUT_JSON="_ci_out/harness_results.json"
+
+          # Si le harness supporte --input-dir, on lui donne test_data
+          if python "$HARNESS" --help 2>/dev/null | grep -q -- "--input-dir"; then
+            python "$HARNESS" --repo-root . --input-dir test_data --out "$OUT_JSON" 2>&1 | tee -a _ci_out/smoke.log
+            echo $? > _ci_out/exit_code.txt
+          else
+            # Sinon on tente un run minimal sans input-dir (smoke interne)
+            python "$HARNESS" --repo-root . --out "$OUT_JSON" 2>&1 | tee -a _ci_out/smoke.log
+            echo $? > _ci_out/exit_code.txt
+          fi
+
+          echo "" | tee -a _ci_out/smoke.log
+          echo "Find produced reports (ddr_report.json / e_report.json):" | tee -a _ci_out/smoke.log
+          find . -maxdepth 10 -type f \( -name "ddr_report.json" -o -name "e_report.json" \) -print | tee _ci_out/found_reports.txt || true
+
+          exit 0
 
       - name: Upload artifacts
         if: always()
@@ -95,12 +96,12 @@ PY
             **/e_report.json
           if-no-files-found: error
 
-      - name: Fail only on fatal errors
+      - name: Fail if harness failed
         shell: bash
         run: |
           set -euo pipefail
           code=$(cat _ci_out/exit_code.txt || echo 99)
           echo "exit_code=$code"
-          if [ "$code" = "2" ] || [ "$code" = "99" ]; then
+          if [ "$code" != "0" ]; then
             exit 1
           fi
