@@ -1,0 +1,75 @@
+name: Systemd-runner CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+env:
+  PYTHONHASHSEED: "0"
+  TZ: "UTC"
+  LC_ALL: "C.UTF-8"
+  LANG: "C.UTF-8"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Compile (sanity)
+        run: |
+          python -m compileall -q .
+
+      - name: Smoke run (DD-R + optional E)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p _ci_out
+          python 00_core/scripts/run_ddr.py \
+            --in 01_tests_multisector/tests/fixtures/md/docs_demo.md \
+            --out _ci_out \
+            --with-e
+
+          test -s _ci_out/ddr_report.json
+
+          python - <<'PY'
+          import json
+          p = "_ci_out/ddr_report.json"
+          with open(p, "r", encoding="utf-8") as f:
+            d = json.load(f)
+          required = ["run_id", "summary"]
+          missing = [k for k in required if k not in d]
+          if missing:
+            raise SystemExit(f"ddr_report.json missing keys: {missing}")
+          print("OK: ddr_report.json basic structure")
+          PY
+
+      - name: Upload artifacts (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: systemd-runner-ci-artifacts
+          path: |
+            _ci_out/**
+          if-no-files-found: warn
+          retention-days: 3
