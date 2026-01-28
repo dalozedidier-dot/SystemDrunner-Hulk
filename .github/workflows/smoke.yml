@@ -8,6 +8,7 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,7 +17,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
+
+      - name: Debug layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          pwd
+          ls -la
+          ls -la .github/workflows || true
+          ls -la test_data || true
+          ls -la scripts || true
+          ls -la 01_tests_multisector || true
 
       - name: Install
         shell: bash
@@ -26,17 +37,57 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
-          pip install -U pytest
 
-      - name: Run tests
+      - name: Prepare TEST_MATRIX
         shell: bash
         run: |
           set -euo pipefail
-          pytest -q
+          if [ -f TEST_MATRIX.md ]; then
+            echo "TEST_MATRIX.md found"
+          elif [ -f TEST_MATRIX.example.md ]; then
+            cp TEST_MATRIX.example.md TEST_MATRIX.md
+            echo "Copied TEST_MATRIX.example.md -> TEST_MATRIX.md"
+          else
+            echo "Missing TEST_MATRIX.md and TEST_MATRIX.example.md"
+            exit 2
+          fi
 
-      - name: Upload artifacts (_ci_out if exists)
+      - name: Run smoke DDR + E
+        shell: bash
+        env:
+          PYTHONPATH: .
+        run: |
+          set -euo pipefail
+
+          # Nettoyage / dossiers de sortie
+          rm -rf _ci_out ddr_smoke
+          mkdir -p _ci_out ddr_smoke
+
+          # On tente les entrypoints probables (tu en as forcément un qui marche)
+          if [ -f scripts/run_smoke.py ]; then
+            python scripts/run_smoke.py
+          elif [ -f 01_tests_multisector/harness.py ]; then
+            python 01_tests_multisector/harness.py --repo-root . --test-matrix TEST_MATRIX.md
+          elif [ -f harness.py ]; then
+            python harness.py --repo-root . --test-matrix TEST_MATRIX.md
+          else
+            echo "Aucun entrypoint smoke/harness trouvé."
+            echo "Voici les candidats dans le repo :"
+            find . -maxdepth 4 -type f \( -name "*harness*.py" -o -name "*smoke*.py" -o -name "*runner*.py" \) -print
+            exit 2
+          fi
+
+          echo "Reports trouvés :"
+          find . -maxdepth 6 -type f \( -name "ddr_report.json" -o -name "e_report.json" -o -name "extraction_report.json" \) -print || true
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: systemd_smoke_out
-          path: _ci_out/
-          if-no-files-found: ignore
+          name: systemd_smoke_reports
+          path: |
+            ddr_smoke/
+            _ci_out/
+            **/ddr_report.json
+            **/e_report.json
+            **/extraction_report.json
+          if-no-files-found: error
