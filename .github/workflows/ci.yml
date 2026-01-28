@@ -36,16 +36,13 @@ jobs:
           echo "ROOT:"
           ls -la
           echo ""
-          echo "test_data:"
-          ls -la test_data || true
-          echo ""
           echo "Find harness.py:"
           find . -maxdepth 6 -type f -name "harness.py" -print || true
           echo ""
-          echo "Find band_*.csv:"
-          find . -maxdepth 6 -type f -name "band_*.csv" -print || true
+          echo "Find fixtures (md/csv):"
+          find tests -maxdepth 6 -type f \( -name "*.md" -o -name "*.csv" \) -print || true
 
-      - name: Run harness (DDR + E)
+      - name: Run harness (aggregated)
         shell: bash
         env:
           PYTHONPATH: .
@@ -54,7 +51,6 @@ jobs:
           rm -rf _ci_out
           mkdir -p _ci_out
 
-          # Trouver le harness automatiquement (au cas où le chemin bouge)
           HARNESS=$(find . -maxdepth 6 -type f -name "harness.py" | head -n 1)
           if [ -z "$HARNESS" ]; then
             echo "No harness.py found" | tee _ci_out/smoke.log
@@ -63,37 +59,124 @@ jobs:
           fi
 
           echo "Using HARNESS=$HARNESS" | tee _ci_out/smoke.log
-
-          # Capturer l'aide pour qu'on voie les bons arguments
           python "$HARNESS" --help > _ci_out/harness_help.txt 2>&1
 
           OUT_JSON="_ci_out/harness_results.json"
-
-          # Si le harness supporte --input-dir, on lui donne test_data
-          if python "$HARNESS" --help 2>/dev/null | grep -q -- "--input-dir"; then
-            python "$HARNESS" --repo-root . --input-dir test_data --out "$OUT_JSON" 2>&1 | tee -a _ci_out/smoke.log
-            echo $? > _ci_out/exit_code.txt
-          else
-            # Sinon on tente un run minimal sans input-dir (smoke interne)
-            python "$HARNESS" --repo-root . --out "$OUT_JSON" 2>&1 | tee -a _ci_out/smoke.log
-            echo $? > _ci_out/exit_code.txt
-          fi
-
-          echo "" | tee -a _ci_out/smoke.log
-          echo "Find produced reports (ddr_report.json / e_report.json):" | tee -a _ci_out/smoke.log
-          find . -maxdepth 10 -type f \( -name "ddr_report.json" -o -name "e_report.json" \) -print | tee _ci_out/found_reports.txt || true
+          python "$HARNESS" --repo-root . --out "$OUT_JSON" 2>&1 | tee -a _ci_out/smoke.log
+          echo $? > _ci_out/exit_code.txt
 
           exit 0
+
+      - name: Export classic reports (ddr_report.json + e_report.json)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          out_dir = Path("_ci_out")
+          p = out_dir / "harness_results.json"
+          if not p.exists():
+            (out_dir / "export_error.txt").write_text("Missing harness_results.json\n", encoding="utf-8")
+            raise SystemExit(0)
+
+          data = json.loads(p.read_text(encoding="utf-8"))
+          if not isinstance(data, list) or not data:
+            (out_dir / "export_error.txt").write_text("Empty harness_results.json\n", encoding="utf-8")
+            raise SystemExit(0)
+
+          first = data[0]
+
+          ddr = first.get("ddr", {})
+          extraction = first.get("extraction", {})
+          meta = first.get("meta", {})
+
+          # ddr_report.json (style historique)
+          (out_dir / "ddr_report.json").write_text(
+            json.dumps(ddr, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+          )
+
+          # e_report.json (style historique: E + listes)
+          e_report = {
+            "E": ddr.get("e", "INCONCLUSIF"),
+            "ko": ddr.get("ko", []),
+            "nc": ddr.get("nc", []),
+            "ok": ddr.get("ok", []),
+            "meta": {
+              "profile_id": meta.get("profile_id"),
+              "adapter_id": meta.get("adapter_id"),
+              "kernel": meta.get("kernel"),
+              "fixture": extraction.get("fixture"),
+            }
+          }
+          (out_dir / "e_report.json").write_text(
+            json.dumps(e_report, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+          )
+
+          # extraction_report.json (utile pour audit)
+          (out_dir / "extraction_report.json").write_text(
+            json.dumps(extraction, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+          )
+
+          # mini résumé
+          summary = {
+            "picked_index": 0,
+            "total_cases": len(data),
+            "picked_fixture": extraction.get("fixture"),
+            "picked_profile": meta.get("profile_id"),
+            "DDR": ddr.get("ddr"),
+            "E": ddr.get("e"),
+            "ko": ddr.get("ko", []),
+            "nc": ddr.get("nc", []),
+            "ok": ddr.get("ok", []),
+          }
+          (out_dir / "smoke_summary.json").write_text(
+            json.dumps(summary, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+          )
+          PY
+
+          echo "Produced:"
+          ls -la _ci_out | sed -n '1,200p'
+
+      - name: Write GitHub summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f _ci_out/smoke_summary.json ]; then
+            python - <<'PY'
+            import json, os
+            from pathlib import Path
+            s = json.loads(Path("_ci_out/smoke_summary.json").read_text(encoding="utf-8"))
+            lines = []
+            lines.append("# Systemd-runner smoke DDR + E")
+            lines.append("")
+            lines.append(f"Fixture: `{s.get('picked_fixture')}`")
+            lines.append(f"Profile: `{s.get('picked_profile')}`")
+            lines.append(f"DDR: `{s.get('DDR')}`")
+            lines.append(f"E: `{s.get('E')}`")
+            lines.append("")
+            lines.append(f"KO: `{', '.join(s.get('ko') or [])}`")
+            lines.append(f"NC: `{', '.join(s.get('nc') or [])}`")
+            lines.append(f"OK: `{', '.join(s.get('ok') or [])}`")
+            lines.append("")
+            Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines), encoding="utf-8")
+            PY
+          fi
 
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: systemd_runner_artifacts
-          path: |
-            _ci_out/
-            **/ddr_report.json
-            **/e_report.json
+          path: _ci_out/
+          retention-days: 30
           if-no-files-found: error
 
       - name: Fail if harness failed
